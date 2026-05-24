@@ -1,0 +1,60 @@
+name: Template hygiene
+
+# Guards against accidental contamination of this template repo.
+# Two classes of regression we want to catch fast:
+#
+#  1. The Obsidian config (.obsidian/app.json etc.) gets dropped from a
+#     commit — students would then have to reconfigure their vaults manually.
+#  2. Someone opens this template repo as their working vault and pushes
+#     real group content into it, polluting all future group assignments.
+#
+# Runs on every push/PR to main and fails the check if drift is detected.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Obsidian config must be present
+        run: |
+          missing=0
+          for f in .obsidian/app.json .obsidian/appearance.json .obsidian/core-plugins.json; do
+            if [ ! -f "$f" ]; then
+              echo "::error file=$f::Missing — the template must ship Obsidian config so student vaults inherit it."
+              missing=1
+            fi
+          done
+          test $missing -eq 0
+
+      - name: Obsidian config must have safe defaults
+        run: |
+          cfg=.obsidian/app.json
+          grep -q '"useMarkdownLinks": true'   "$cfg" || { echo "::error file=$cfg::useMarkdownLinks must be true (Wiki links break MkDocs rendering)";  exit 1; }
+          grep -q '"alwaysUpdateLinks": false' "$cfg" || { echo "::error file=$cfg::alwaysUpdateLinks must be false (true rewrites paths to vault-rooted form on rename)"; exit 1; }
+          grep -q '"attachmentFolderPath": "\./attachments"' "$cfg" || { echo "::error file=$cfg::attachmentFolderPath must be ./attachments (sibling, lowercase)"; exit 1; }
+
+      - name: Template defaults must not be contaminated by real group content
+        run: |
+          fail=0
+          if grep -E '^group_name: "[^"]+' index.md > /dev/null; then
+            echo "::error file=index.md::group_name has real content. The template must ship with group_name: \"\"."
+            grep -E '^group_name:' index.md
+            fail=1
+          fi
+          if grep -E '^group_number: "[^"]+' index.md > /dev/null; then
+            echo "::error file=index.md::group_number has real content. The template must ship with group_number: \"\"."
+            grep -E '^group_number:' index.md
+            fail=1
+          fi
+          if ! grep -q '^hero_title: "Nome do Grupo"' index.md; then
+            echo "::error file=index.md::hero_title is not the default \"Nome do Grupo\". Someone likely opened this template as a working vault."
+            grep '^hero_title:' index.md
+            fail=1
+          fi
+          test $fail -eq 0
