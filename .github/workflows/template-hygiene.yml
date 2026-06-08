@@ -17,6 +17,10 @@ on:
 
 jobs:
   hygiene:
+    # Only run on the template repo itself. Student repos created from the
+    # template inherit this workflow file but are not themselves templates,
+    # so this job is skipped on every assignment repo.
+    if: github.event.repository.is_template
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
